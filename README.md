@@ -1,0 +1,2 @@
+# OCR
+CNN+LSTM+CTC进行OCR识别
