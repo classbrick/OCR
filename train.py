@@ -92,6 +92,34 @@ def conv_layer(batch_x):
 
     return conv1
 
+# lstm层
+def lstm_layer(input, batch_size, hidden_size=256, layer_num=2):
+
+    #hidden_size = time_step
+    input = tf.reshape(input, [-1, 32])
+
+    #首先将32通道的数据归一化
+    w_32 = tf.Variable(tf.random_normal(shape=[32,1]))
+
+    # 对输入数据进行塑型 暴力
+    input_X = tf.reshape(tf.matmul(input, w_32), [64, 256, 256])
+
+    #input_X = tf.reshape(input, [-1, 256, 256*32])
+
+    def lstm_cell():
+        lstm = rnn.BasicLSTMCell(num_units=hidden_size)
+        drop = rnn.DropoutWrapper(cell=lstm)
+        return drop
+
+    mlstm_cell = rnn.MultiRNNCell([lstm_cell() for _ in range(layer_num)])
+
+    # 初始化多层LSTM
+    init_state = mlstm_cell.zero_state(batch_size, dtype=tf.float32)
+
+    # 进行LSTM
+    outputs, state = tf.nn.dynamic_rnn(mlstm_cell, inputs=input_X, initial_state=init_state, time_major=False)
+    return outputs, state
+
 def connect_layer(input, Max_Len):
     '''
     全连接层, 将input转换为[batch_size, -1]，输出的w的值为[-1, class_num]
@@ -115,34 +143,9 @@ def connect_layer(input, Max_Len):
     # 直接把输入转换为
     return output
 
-# lstm层
-def lstm_layer(input, batch_size, hidden_size=256, layer_num=2):
-
-    #hidden_size = time_step
-
-    # 对输入数据进行塑型 暴力
-    input_X = tf.reshape(input, [-1, 256, 256*32])
-    # # 单独的LSTM层
-    # lstm_cell = rnn.BasicLSTMCell(num_units=hidden_size, forget_bias=1.0, state_is_tuple=True)
-    # # dropout
-    # lstm_cell = rnn.DropoutWrapper(cell=lstm_cell, input_keep_prob=1.0, output_keep_prob=keep_prob)
-    # # 多层LSTM
-    # mlstm_cell = rnn.MultiRNNCell([lstm_cell]*layer_num)
-
-    def lstm_cell():
-        lstm = rnn.BasicLSTMCell(num_units=hidden_size)
-        drop = rnn.DropoutWrapper(cell=lstm)
-        return drop
-
-    mlstm_cell = rnn.MultiRNNCell([lstm_cell() for _ in range(layer_num)])
-
-    # 初始化多层LSTM
-    init_state = mlstm_cell.zero_state(batch_size, dtype=tf.float32)
-
-    # 进行LSTM
-    outputs, state = tf.nn.dynamic_rnn(mlstm_cell, inputs=input_X, initial_state=init_state, time_major=False)
-    return outputs, state
-
+# 计算ctc_loss
+def ctc_loss(labels, inputs, sequence_length):
+    return tf.nn.ctc_loss(labels, inputs, sequence_length)
 
 # def vec2onehot(vector, batch_size, Max_Len, Max_Width):
 #     ret = tf.Variable(tf.zeros(shape=[batch_size, Max_Len, Max_Width]))
@@ -167,8 +170,6 @@ def train(batch_x, batch_Y, batch_size):
     print('conn')
     # 全连接层
     conn = connect_layer(lstm, LONGEST_CH)
-    # # 全连接层输出转换为one-hot
-    # conn_oh = vec2onehot(conn, LONGEST_CH)
 
     # 输出值
     out = conn
@@ -182,11 +183,15 @@ def train(batch_x, batch_Y, batch_size):
     print('onehot_out',onehot_out)
     print('onehot_batch_Y', onehot_batch_Y)
 
+
+    # 试一试CTC
+    #loss_ctc = tf.nn.ctc_loss()
     # 通过损失函数计算误差
     #loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=onehot_out, labels=onehot_batch_Y))
-    loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=out, labels=batch_Y))
+    # loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=out, labels=batch_Y))
+    loss = tf.nn.ctc_loss(labels=onehot_batch_Y, inputs=lstm, sequence_length=batch_size)
     # 定义优化器
-    optimizer = tf.train.AdamOptimizer(learning_rate=0.002).minimize(loss)
+    optimizer = tf.train.AdamOptimizer(learning_rate=0.01).minimize(loss)
 
     max_idx_p = out
     max_idx_l = batch_y
@@ -237,5 +242,4 @@ if __name__ == '__main__':
             #	saver.save(sess, "crack_capcha.model", global_step=step)
             #	break
             step += 1
-        
         
